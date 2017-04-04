@@ -646,7 +646,14 @@ footer {
 }
 
 #ecodash #ui #controls h3 {
-    font-size:0.8rem;
+    font-size:1.0rem;
+    font-weight:bold;
+    color:gray;
+    margin:5px 0px;
+}
+
+#ecodash #ui #controls h4 {
+    font-size:0.9rem;
     font-weight:bold;
     color:gray;
     margin:5px 0px;

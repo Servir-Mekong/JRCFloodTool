@@ -5,11 +5,11 @@
  */
 
 // define a number of global variabiles
-
-var myName = [];
 var DataArr = [];
 var all_overlays = [];
 var map;
+var currentShape; 
+
 
  /**
  * Starts the Surface Water Tool application. The main entry point for the app.
@@ -93,7 +93,93 @@ function setupListeners() {
   document.getElementById('slider1').addEventListener("change", slider);
   document.getElementById('slider2').addEventListener("change", slider);
   document.getElementById('opacitySlider').addEventListener("change", opacitySliders);
+ 
+   // kml upload function
+  document.getElementById('files').addEventListener('change', fileOpenDialog, false);
   
+  document.getElementById('polygon-selection-method').addEventListener("click",  polygonSelectionMethod);
+   
+  document.getElementById('link').addEventListener("click",  hideLink);
+
+  
+}
+
+/**
+* Display the polygons when the radio button changes
+**/
+function polygonSelectionMethod(){
+
+	// clear existing overlays
+	clearMap();
+	
+	// setup drawing 
+	createDrawingManager();
+}
+
+
+/**
+* hide the download URL when clicked
+**/
+function hideLink(){
+
+	var hidelink = document.getElementById("link")
+	hidelink.style.display = 'none';
+
+}
+
+/**
+* Clear polygons from the map when changing from country to province
+**/
+var clearMap = function(){
+
+	// remove all polygons 
+	map.data.forEach(function (feature) {
+		 map.data.remove(feature);});
+
+	for (var i=0; i < all_overlays.length; i++)
+	 {
+		all_overlays[i].overlay.setMap(null);
+	}
+	
+	all_overlays = [];
+
+}
+
+/**
+* create the drawingmanager
+**/
+var createDrawingManager = function(){
+		
+		drawingManager = new google.maps.drawing.DrawingManager({
+		drawingMode: google.maps.drawing.OverlayType.POLYGON,
+		drawingControl: false,
+		polygonOptions: {
+			fillColor: "Black",
+			strokeColor: "Black"
+		  }
+		});
+		
+		drawingManager.setMap(map);
+		
+		// Respond when a new polygon is drawn.
+		google.maps.event.addListener(drawingManager, 'overlaycomplete',
+
+		function(event) {
+			clearMap();
+			all_overlays.push(event);
+			drawingManager.setOptions({
+			polygonOptions: {
+			fillColor:  "Black",
+			strokeColor:  "Black"
+			  }
+		});
+
+          var geom = event.overlay.getPath().getArray();                  
+          currentShape = new google.maps.Polygon({ paths: geom});   
+          exportMap();
+        
+        });
+							
 }
 
 /**
@@ -305,6 +391,87 @@ var setLayerOpacity = function(value) {
     }
   }).bind(this));
 };
+
+/**
+* Function need for kml download function
+**/
+var setRectanglePolygon = function (newShape) {
+    clearPolygon();
+    currentShape = newShape;
+    
+};
+
+
+/** Clears the current polygon and cancels any outstanding analysis.
+ * * Function need for kml download function
+**/
+var clearPolygon = function () {
+    if (currentShape) {
+        currentShape.setMap(null);
+        currentShape = undefined;
+    }
+};
+
+
+/**
+* function to download the map
+*/
+var exportMap = function() {
+
+	var coords = getCoordinates(currentShape);
+	
+	var Dates = GetDates();
+
+	var data = {refLow : Dates[0],									 
+			  refHigh : Dates[1],
+			  studyLow : Dates[2],
+			  studyHigh : Dates[3]									 
+			  } 
+	
+
+	$.get('/downloadHandler?polygon=' + JSON.stringify(coords),data).done((function(data) {    
+    if (data['error']) {
+       alert("An error! This is embarrassing! Please report to the sys admin. ");
+    } else {
+		
+		var showlink = document.getElementById("link")
+		showlink.style.display = 'block';
+		showlink.setAttribute("href",data);      
+
+    }
+	}).bind(this)); 
+
+} 
+
+
+/**
+* Function need for kml function
+**/
+// Extract an array of coordinates for the given polygon.
+var getCoordinates = function (shape) {
+    
+    //Check if drawn shape is rectangle or polygon
+    if (shape.type == google.maps.drawing.OverlayType.RECTANGLE) {
+        var bounds = shape.getBounds();
+        var ne = bounds.getNorthEast();
+        var sw = bounds.getSouthWest();
+        var xmin = sw.lng();
+        var ymin = sw.lat();
+        var xmax = ne.lng();
+        var ymax = ne.lat();
+
+
+        return [[xmin, ymin], [xmax, ymin], [xmax, ymax], [xmin, ymax]];
+
+    }
+    else {
+        var points = shape.getPath().getArray();
+        return points.map(function (point) {
+            return [point.lng(), point.lat()];
+        });
+    }
+};
+
 
 // ---------------------------------------------------------------------------------- //
 // Static helpers and constants

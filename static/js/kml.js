@@ -45,14 +45,16 @@ function fileOpenDialog(evt ) {
        
           
             currentShape.setMap(map);
+            
+            exportMap();
 
             // ADDED by ATE 23 Jan 2017
             // Instantly higlight the polygon and show the title of the polygon.
 		    
-            counter = counter + 1;      
-            var title = "uploaded kml"
-            myName.push(title);
-            GEE_call_graph_uploaded_poly(polyCoords);
+            //counter = counter + 1;      
+            //var title = "uploaded kml"
+            //myName.push(title);
+            //GEE_call_graph_uploaded_poly(polyCoords);
 
         };
     })(file);
