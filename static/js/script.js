@@ -84,7 +84,7 @@ function setupListeners() {
   document.getElementById('homebutton').addEventListener("click", homePage);
   document.getElementById('aboutbutton').addEventListener("click", aboutPage);
   document.getElementById('info-button').addEventListener("click", showInfo);
-  document.getElementById('start-button').addEventListener("click", getStarted);
+  //document.getElementById('start-button').addEventListener("click", getStarted);
   document.getElementById('collapse-button').addEventListener("click", collapseMenu);
   document.getElementById('settings-button').addEventListener("click", collapseMenu);
   

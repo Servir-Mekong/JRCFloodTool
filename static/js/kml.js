@@ -3,7 +3,7 @@
 
 function fileOpenDialog(evt ) {
 	
-	console.log(evt);
+	clearMap();
     var files = evt.target.files; // FileList object
     var file = files[0];   
     var reader = new FileReader();
