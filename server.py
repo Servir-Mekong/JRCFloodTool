@@ -58,7 +58,7 @@ end = '2012-12-31'
 
 
 # Define country names
-country_names = ['Myanmar (Burma)'] #,'Thailand','Laos','Vietnam','Cambodia']; 
+country_names = ['Myanmar (Burma)','Thailand','Laos','Vietnam','Cambodia']; 
 # import the country feasture collection
 countries = ee.FeatureCollection('ft:1tdSwUL7MVpOauSgRzqVTOwdfy17KDbw-1d9omPw');
 # find the countries in the country list
