@@ -505,13 +505,13 @@ var getEeMapType = function(eeMapId, eeToken) {
 var EE_URL = 'https://earthengine.googleapis.com';
 
 /** @type {number} The default zoom level for the map. */
-var DEFAULT_ZOOM = 8;
+var DEFAULT_ZOOM = 6;
 
 /** @type {number} The max allowed zoom level for the map. */
 var MAX_ZOOM = 25;
 
 /** @type {Object} The default center of the map. */
-var DEFAULT_CENTER = {lng: 95.8, lat: 20.4};
+var DEFAULT_CENTER = {lng: 102.93, lat: 16.4};
 
 /** @type {string} The default date format. */
 var DATE_FORMAT = 'yyyy-mm-dd';
