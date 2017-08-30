@@ -1,0 +1,18 @@
+# python compile files
+# ===========
+*.pyc
+
+# private folder
+# ===========
+credentials/
+
+# libs
+# ===========
+ee/
+httplib2/
+oauth2client/
+
+# Eclipse project files
+# ======================
+.project
+.pydevproject

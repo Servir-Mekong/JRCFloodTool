@@ -5,11 +5,17 @@ This module defines the Command class which is the base class of all
 the commands supported by the EE command line tool. It also defines
 the classes for configuration and runtime context management.
 """
-
+from __future__ import print_function
+import collections
 from datetime import datetime
 import json
 import os
+import re
+import threading
 import time
+
+import urllib
+import httplib2
 
 import oauth2client.client
 
@@ -67,6 +73,7 @@ class CommandLineConfig(object):
           'https://accounts.google.com/o/oauth2/token', None)
     else:
       credentials = 'persistent'
+
     ee.Initialize(credentials=credentials, opt_url=self.url)
 
   def save(self):
@@ -80,7 +87,7 @@ class CommandLineConfig(object):
 
 
 def query_yes_no(msg):
-  print '%s (y/n)' % msg
+  print('%s (y/n)' % msg)
   while True:
     confirm = raw_input().lower()
     if confirm == 'y':
@@ -88,7 +95,7 @@ def query_yes_no(msg):
     elif confirm == 'n':
       return False
     else:
-      print 'Please respond with \'y\' or \'n\'.'
+      print('Please respond with \'y\' or \'n\'.')
 
 
 def truncate(string, length):
@@ -106,16 +113,149 @@ def wait_for_task(task_id, timeout, log_progress=True):
     state = status['state']
     if state in TASK_FINISHED_STATES:
       error_message = status.get('error_message', None)
-      print 'Task ended at state: %s after %.2f seconds' % (state, elapsed)
+      print('Task %s ended at state: %s after %.2f seconds'
+            % (task_id, state, elapsed))
       if error_message:
-        print 'Error: %s' % error_message
+        print('Error: %s' % error_message)
       return
     if log_progress and elapsed - last_check >= 30:
-      print '[{:%H:%M:%S}] Current task state: {}'.format(datetime.now(), state)
+      print('[{:%H:%M:%S}] Current state for task {}: {}'
+            .format(datetime.now(), task_id, state))
       last_check = elapsed
     remaining = timeout - elapsed
     if remaining > 0:
       time.sleep(min(10, remaining))
     else:
       break
-  print 'Wait timed out after %.2f seconds' % elapsed
+  print('Wait for task %s timed out after %.2f seconds' % (task_id, elapsed))
+
+
+def wait_for_tasks(task_id_list, timeout, log_progress=False):
+  """For each task specified in task_id_list, wait for that task or timeout."""
+
+  if len(task_id_list) == 1:
+    wait_for_task(task_id_list[0], timeout, log_progress)
+    return
+
+  threads = []
+  for task_id in task_id_list:
+    t = threading.Thread(target=wait_for_task,
+                         args=(task_id, timeout, log_progress))
+    threads.append(t)
+    t.start()
+
+  for thread in threads:
+    thread.join()
+
+  status_list = ee.data.getTaskStatus(task_id_list)
+  status_counts = collections.defaultdict(int)
+  for status in status_list:
+    status_counts[status['state']] += 1
+  num_incomplete = (len(status_list) - status_counts['COMPLETED']
+                    - status_counts['FAILED'] - status_counts['CANCELLED'])
+  print('Finished waiting for tasks.\n  Status summary:')
+  print('  %d tasks completed successfully.' % status_counts['COMPLETED'])
+  print('  %d tasks failed.' % status_counts['FAILED'])
+  print('  %d tasks cancelled.' % status_counts['CANCELLED'])
+  print('  %d tasks are still incomplete (timed-out)' % num_incomplete)
+
+
+def expand_gcs_wildcards(source_files):
+  """Implements glob-like '*' wildcard completion for cloud storage objects.
+
+  Args:
+    source_files: A list of one or more cloud storage paths of the format
+                  gs://[bucket]/[path-maybe-with-wildcards]
+
+  Yields:
+    cloud storage paths of the above format with '*' wildcards expanded.
+  Raises:
+    EEException: If badly formatted source_files
+                 (e.g., missing gs://) are specified
+  """
+  for source in source_files:
+    if '*' not in source:
+      yield source
+      continue
+
+    # We extract the bucket and prefix from the input path to match
+    # the parameters for calling GCS list objects and reduce the number
+    # of items returned by that API call
+
+    # Capture the part of the path after gs:// and before the first /
+    bucket_regex = 'gs://([a-z0-9_.-]+)(/.*)'
+    bucket_match = re.match(bucket_regex, source)
+    if bucket_match:
+      bucket, rest = bucket_match.group(1, 2)
+    else:
+      raise ee.ee_exception.EEException(
+          'Badly formatted source file or bucket: %s' % source)
+    prefix = rest[:rest.find('*')]  # Everything before the first wildcard
+
+    bucket_files = _gcs_ls(bucket, prefix)
+
+    # Regex to match the source path with wildcards expanded
+    regex = re.escape(source).replace(r'\*', '[^/]*') + '$'
+    for gcs_path in bucket_files:
+      if re.match(regex, gcs_path):
+        yield gcs_path
+
+
+def _gcs_ls(bucket, prefix=''):
+  """Retrieve a list of cloud storage filepaths from the given bucket.
+
+  Args:
+    bucket: The cloud storage bucket to be queried
+    prefix: Optional, a prefix used to select the objects to return
+  Yields:
+    Cloud storage filepaths matching the given bucket and prefix
+  Raises:
+    EEException:
+      If there is an error in accessing the specified bucket
+  """
+
+  base_url = 'https://www.googleapis.com/storage/v1/b/%s/o'%bucket
+  method = 'GET'
+  http = ee.data.authorizeHttp(httplib2.Http(0))
+  next_page_token = None
+
+  # Loop to handle paginated responses from GCS;
+  # Exits once no 'next page token' is returned
+  while True:
+    params = {'fields': 'items/name,nextPageToken'}
+    if next_page_token:
+      params['pageToken'] = next_page_token
+    if prefix:
+      params['prefix'] = prefix
+    payload = urllib.urlencode(params)
+
+    url = base_url + '?' + payload
+    try:
+      response, content = http.request(url, method=method)
+    except httplib2.HttpLib2Error as e:
+      raise ee.ee_exception.EEException(
+          'Unexpected HTTP error: %s' % e.message)
+
+    if response.status < 100 or response.status >= 300:
+      raise ee.ee_exception.EEException(('Error retreiving bucket %s;'
+                                         ' Server returned HTTP code: %d' %
+                                         (bucket, response.status)))
+
+    json_content = json.loads(content)
+    if 'error' in json_content:
+      json_error = json_content['error']['message']
+      raise ee.ee_exception.EEException('Error retreiving bucket %s: %s' %
+                                        (bucket, json_error))
+
+    objects = json_content['items']
+    object_names = [str(gc_object['name']) for gc_object in objects]
+
+    for name in object_names:
+      yield 'gs://%s/%s' % (bucket, name)
+
+    # GCS indicates no more results
+    if 'nextPageToken' not in json_content:
+      return
+
+    # Load next page, continue at beginning of while True:
+    next_page_token = json_content['nextPageToken']
