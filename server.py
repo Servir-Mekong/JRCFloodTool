@@ -11,19 +11,14 @@ import config
 import ee
 import jinja2
 import webapp2
-import oauth2client.appengine
 
 import socket
 
 from google.appengine.api import urlfetch
-from google.appengine.api import memcache
-from google.appengine.api import users
-from google.appengine.api import channel
-from google.appengine.api import taskqueue
 
-# ------------------------------------------------------------------------------------ #
-# Initialization
-# ------------------------------------------------------------------------------------ #
+###############################################################################
+#                               Initialization.                               #
+###############################################################################
 
 # Memcache is used to avoid exceeding our EE quota. Entries in the cache expire
 # 24 hours after they are added. See:
@@ -58,7 +53,7 @@ end = '2012-12-31'
 
 
 # Define country names
-country_names = ['Myanmar (Burma)','Thailand','Laos','Vietnam','Cambodia']; 
+country_names = ['Myanmar (Burma)', 'Thailand', 'Laos', 'Vietnam', 'Cambodia']; 
 # import the country feasture collection
 countries = ee.FeatureCollection('ft:1tdSwUL7MVpOauSgRzqVTOwdfy17KDbw-1d9omPw');
 # find the countries in the country list
@@ -66,15 +61,15 @@ mekongCountries = countries.filter(ee.Filter.inList('Country', country_names));
 # Get the geometry of the countries
 mekongRegion = mekongCountries.geometry()
 
-# ------------------------------------------------------------------------------------ #
-# Web request handlers
-# ------------------------------------------------------------------------------------ #
+###############################################################################
+#                             Web request handlers.                           #
+###############################################################################
 
 class MainHandler(webapp2.RequestHandler):
     """A servlet to handle requests to load the main web page."""
     
     def get(self):
-        mapid = updateMap(start,end)
+        mapid = updateMap(start, end)
         template_values = {
             'eeMapId': mapid['mapid'],
             'eeToken': mapid['token']
@@ -85,24 +80,24 @@ class MainHandler(webapp2.RequestHandler):
 
 
 class DetailsHandler(webapp2.RequestHandler):
-  """A servlet to handle requests for details about a Polygon."""
+    """A servlet to handle requests for details about a Polygon."""
   
-  def get(self):
-    """Returns details about a polygon."""
-
-    start = self.request.get('refLow') + '-01-01'
-    end = self.request.get('refHigh') + '-12-31'
+    def get(self):
+        """Returns details about a polygon."""
     
-    mapid = updateMap(start,end)
-    
-    template_values = {
-		'eeMapId': mapid['mapid'],
-		'eeToken': mapid['token']
-        }
+        start = self.request.get('refLow') + '-01-01'
+        end = self.request.get('refHigh') + '-12-31'
         
-    template = JINJA2_ENVIRONMENT.get_template('index.html')
-    self.response.headers['Content-Type'] = 'application/json'
-    self.response.out.write(json.dumps(template_values))
+        mapid = updateMap(start, end)
+        
+        template_values = {
+            'eeMapId': mapid['mapid'],
+            'eeToken': mapid['token']
+            }
+            
+        JINJA2_ENVIRONMENT.get_template('index.html')
+        self.response.headers['Content-Type'] = 'application/json'
+        self.response.out.write(json.dumps(template_values))
 
 # Download handler to download the map
 # returns a url to download
@@ -110,34 +105,34 @@ class DownloadHandler(webapp2.RequestHandler):
     """A servlet to handle requests to load the main web page."""
     
     def get(self):
-		
-		poly = json.loads(unicode(self.request.get('polygon')))
-		
-		coords = []
-		
-		for items in poly:
-			coords.append([items[0],items[1]])
-		
-		
-		start = self.request.get('refLow') + '-01-01'
-		end = self.request.get('refHigh') + '-12-31'
-			
-		
-		print "========================================="
-		print coords
-		
-		
-		polygon = ee.FeatureCollection(ee.Geometry.Polygon(coords))
-		
-		downloadURL = downloadMap(polygon,coords,start,end)
+        
+        poly = json.loads(unicode(self.request.get('polygon')))
+        
+        coords = []
+        
+        for items in poly:
+            coords.append([items[0], items[1]])
+        
+        
+        start = self.request.get('refLow') + '-01-01'
+        end = self.request.get('refHigh') + '-12-31'
+            
+        
+        print "========================================="
+        print coords
+        
+        
+        polygon = ee.FeatureCollection(ee.Geometry.Polygon(coords))
+        
+        downloadURL = downloadMap(polygon, coords, start, end)
 
-		print downloadURL
-		content = json.dumps(downloadURL) 
-		
-		self.response.headers['Content-Type'] = 'application/json'
-		self.response.out.write(content)
+        print downloadURL
+        content = json.dumps(downloadURL) 
+        
+        self.response.headers['Content-Type'] = 'application/json'
+        self.response.out.write(content)
 
-	
+    
 # Define webapp2 routing from URL paths to web request handlers. See:
 # http://webapp-improved.appspot.com/tutorials/quickstart.html
 app = webapp2.WSGIApplication([
@@ -148,94 +143,91 @@ app = webapp2.WSGIApplication([
 ])
 
 
-# ------------------------------------------------------------------------------------ #
-# Helper functions
-# ------------------------------------------------------------------------------------ #
+###############################################################################
+#                                   Helper Functions                          #
+###############################################################################
 
-def updateMap(startDate,endDate):
+def updateMap(startDate, endDate):
 
 
-  myjrc = IMAGE_COLLECTION.filterBounds(mekongRegion).filterDate(startDate, endDate)
-  
-  # calculate total number of observations
-  def calcObs(img):
-	# observation is img > 0
-	obs = img.gt(0);
-	return ee.Image(obs).set('system:time_start', img.get('system:time_start'));  
-  
-  # calculate the number of times water
-  def calcWater(img):
-	  water = img.select('water').eq(2);
-	  return ee.Image(water).set('system:time_start', img.get('system:time_start'));
-      
-  observations = myjrc.map(calcObs)
-  
-  water = myjrc.map(calcWater)
-  
-  # sum the totals
-  totalObs = ee.Image(ee.ImageCollection(observations).sum().toFloat());
-  totalWater = ee.Image(ee.ImageCollection(water).sum().toFloat());
-  
-  # calculate the percentage of total water
-  returnTime = totalWater.divide(totalObs).multiply(100)
-
-  # make a mask
-  Mask = returnTime.gt(1)
-  returnTime = returnTime.updateMask(Mask)
-  
-  # clip the result
-  returnTime = returnTime.clip(mekongRegion)
-
-  return returnTime.getMapId({
-      'min': '0',
-      'max': '100',
-      'bands': 'water',
-      'palette' : 'c10000,d742f4,001556,b7d2f7'
-  })
+    myjrc = IMAGE_COLLECTION.filterBounds(mekongRegion).filterDate(startDate, endDate)
+    
+    # calculate total number of observations
+    def calcObs(img):
+        # observation is img > 0
+        obs = img.gt(0);
+        return ee.Image(obs).set('system:time_start', img.get('system:time_start'));  
+    
+    # calculate the number of times water
+    def calcWater(img):
+        water = img.select('water').eq(2);
+        return ee.Image(water).set('system:time_start', img.get('system:time_start'));
+        
+    observations = myjrc.map(calcObs)
+    
+    water = myjrc.map(calcWater)
+    
+    # sum the totals
+    totalObs = ee.Image(ee.ImageCollection(observations).sum().toFloat());
+    totalWater = ee.Image(ee.ImageCollection(water).sum().toFloat());
+    
+    # calculate the percentage of total water
+    returnTime = totalWater.divide(totalObs).multiply(100)
+    
+    # make a mask
+    Mask = returnTime.gt(1)
+    returnTime = returnTime.updateMask(Mask)
+    
+    # clip the result
+    returnTime = returnTime.clip(mekongRegion)
+    
+    return returnTime.getMapId({
+        'min': '0',
+        'max': '100',
+        'bands': 'water',
+        'palette' : 'c10000,d742f4,001556,b7d2f7'
+    })
 
   
 
 # function to download the map
 # returns a download url
-def downloadMap(polygon,coords,startDate,endDate):
+def downloadMap(polygon, coords, startDate, endDate):
 
-  
-  myjrc = IMAGE_COLLECTION.filterBounds(mekongRegion).filterDate(startDate, endDate)
-  
-  # calculate total number of observations
-  def calcObs(img):
-	# observation is img > 0
-	obs = img.gt(0);
-	return ee.Image(obs).set('system:time_start', img.get('system:time_start'));  
-  
-  # calculate the number of times water
-  def calcWater(img):
-	  water = img.select('water').eq(2);
-	  return ee.Image(water).set('system:time_start', img.get('system:time_start'));
-      
-  observations = myjrc.map(calcObs)
-  
-  water = myjrc.map(calcWater)
-  
-  # sum the totals
-  totalObs = ee.Image(ee.ImageCollection(observations).sum().toFloat());
-  totalWater = ee.Image(ee.ImageCollection(water).sum().toFloat());
-  
-  # calculate the percentage of total water
-  returnTime = totalWater.divide(totalObs).multiply(100)
-
-  # make a mask
-  Mask = returnTime.gt(1)
-  returnTime = returnTime.updateMask(Mask)
-  
-  # clip the result
-  returnTime = returnTime.clip(polygon)
-
-  return returnTime.getDownloadURL({
-		'scale': 30,
-		'crs': 'EPSG:4326',
-		'region': coords
-  })
-  
-  
-
+    
+    myjrc = IMAGE_COLLECTION.filterBounds(mekongRegion).filterDate(startDate, endDate)
+    
+    # calculate total number of observations
+    def calcObs(img):
+        # observation is img > 0
+        obs = img.gt(0);
+        return ee.Image(obs).set('system:time_start', img.get('system:time_start'));  
+    
+    # calculate the number of times water
+    def calcWater(img):
+        water = img.select('water').eq(2);
+        return ee.Image(water).set('system:time_start', img.get('system:time_start'));
+        
+    observations = myjrc.map(calcObs)
+    
+    water = myjrc.map(calcWater)
+    
+    # sum the totals
+    totalObs = ee.Image(ee.ImageCollection(observations).sum().toFloat());
+    totalWater = ee.Image(ee.ImageCollection(water).sum().toFloat());
+    
+    # calculate the percentage of total water
+    returnTime = totalWater.divide(totalObs).multiply(100)
+    
+    # make a mask
+    Mask = returnTime.gt(1)
+    returnTime = returnTime.updateMask(Mask)
+    
+    # clip the result
+    returnTime = returnTime.clip(polygon)
+    
+    return returnTime.getDownloadURL({
+          'scale': 30,
+          'crs': 'EPSG:4326',
+          'region': coords
+    })

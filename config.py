@@ -1,7 +1,7 @@
 #!/usr/bin/env python
+"""Required credentials configuration."""
 
 import ee
-"""Required credentials configuration."""
 
 # The service account email address authorized by your Google contact.
 # The process to set up a service account is described in the README.
